@@ -39,6 +39,23 @@ async function run() {
 
     //=============================================================================user related api's=========================================================================
 
+    //!get legal profiles
+    app.get("/api/lawyerProfiles", async (req, res) => {
+      const cursor = lawyerProfilesCollection.find()
+      const result = await cursor.toArray()
+      res.send(result)
+    })
+
+    //! get individual legal profile
+    app.get("/api/my/lawyerProfiles", async (req, res) => {
+      const query = {}
+      if (req.query.lawyerId) {
+        query.lawyerId=req.query.lawyerId
+      }
+      const result = await lawyerProfilesCollection.find(query).toArray()
+      res.send(result)
+  })
+
     //? get all the users
     app.get("/api/user", async (req, res) => {
       const cursor = userCollection.find();
@@ -47,7 +64,6 @@ async function run() {
     });
 
     //=============================================================================lawyer profile related api's==============================================================
-
 
     //! post legal profile
     app.post("/api/lawyerProfiles", async (req, res) => {
