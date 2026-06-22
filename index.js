@@ -6,7 +6,7 @@ require("dotenv").config();
 const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
@@ -41,68 +41,69 @@ async function run() {
 
     //!get legal profiles
     //! get legal profiles with search, filter, backend sorting & pagination
-app.get("/api/lawyerProfiles", async (req, res) => {
-  try {
-    const {
-      search,
-      category,
-      availability,
-      sort,
-      page = 1,
-      limit = 8,
-    } = req.query;
+    app.get("/api/lawyerProfiles", async (req, res) => {
+      try {
+        const {
+          search,
+          category,
+          availability,
+          sort,
+          page = 1,
+          limit = 8,
+        } = req.query;
 
-    // ?status: "approved"
-    let query = {};
+        // ?
+        let query = { status: "approved" };
 
-    if (search) {
-      query.$or = [
-        { professionalName: { $regex: search, $options: "i" } },
-        { bio: { $regex: search, $options: "i" } },
-      ];
-    }
+        if (search) {
+          query.$or = [
+            { professionalName: { $regex: search, $options: "i" } },
+            { bio: { $regex: search, $options: "i" } },
+          ];
+        }
 
-    if (category && category !== "all") {
-      query.specialization = category;
-    }
+        if (category && category !== "all") {
+          query.specialization = category;
+        }
 
-    if (availability && availability !== "all") {
-      query.availabilityStatus = availability;
-    }
+        if (availability && availability !== "all") {
+          query.availabilityStatus = availability;
+        }
 
-    let sortQuery = { createdAt: 1 };
-    if (sort === "fee-asc") {
-      sortQuery = { hourlyFee: -1 };
-    } else if (sort === "fee-desc") {
-      sortQuery = { hourlyFee: 1 };
-    }
+        let sortQuery = { createdAt: 1 };
+        if (sort === "fee-asc") {
+          sortQuery = { hourlyFee: -1 };
+        } else if (sort === "fee-desc") {
+          sortQuery = { hourlyFee: 1 };
+        }
 
-    const pageNumber = parseInt(page);
-    const limitNumber = parseInt(limit);
-    const skip = (pageNumber - 1) * limitNumber;
+        const pageNumber = parseInt(page);
+        const limitNumber = parseInt(limit);
+        const skip = (pageNumber - 1) * limitNumber;
 
-    const totalLawyers = await lawyerProfilesCollection.countDocuments(query);
+        const totalLawyers =
+          await lawyerProfilesCollection.countDocuments(query);
 
-    const result = await lawyerProfilesCollection
-      .find(query)
-      .sort(sortQuery)
-      .skip(skip)
-      .limit(limitNumber)
-      .toArray();
+        const result = await lawyerProfilesCollection
+          .find(query)
+          .sort(sortQuery)
+          .skip(skip)
+          .limit(limitNumber)
+          .toArray();
 
-    res.send({
-      lawyers: result,
-      total: totalLawyers,
-      page: pageNumber,
-      limit: limitNumber,
-      totalPages: Math.ceil(totalLawyers / limitNumber),
+        res.send({
+          lawyers: result,
+          total: totalLawyers,
+          page: pageNumber,
+          limit: limitNumber,
+          totalPages: Math.ceil(totalLawyers / limitNumber),
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
     });
-  } catch (error) {
-    res
-      .status(500)
-      .send({ message: "Internal Server Error", error: error.message });
-  }
-});
 
     //! get individual legal profile
     app.get("/api/my/lawyerProfiles", async (req, res) => {
@@ -114,10 +115,21 @@ app.get("/api/lawyerProfiles", async (req, res) => {
       res.send(result);
     });
 
+    //=============================================================================user related api's =======================================================
+
     //? get all the users
     app.get("/api/user", async (req, res) => {
       const cursor = userCollection.find();
       const result = await cursor.toArray();
+      res.send(result);
+    });
+
+
+    // ? delete user
+    app.delete("/api/user/delete/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
       res.send(result);
     });
 
