@@ -31,40 +31,34 @@ async function run() {
 
     const database = client.db("advokate");
 
-      //! user collection
-      const userCollection = database.collection("user");
-      
+    //! user collection
+    const userCollection = database.collection("user");
+
     //! lawyerProfiles collection
-      const lawyerProfilesCollection = database.collection("lawyerProfiles");
-      
+    const lawyerProfilesCollection = database.collection("lawyerProfiles");
+
+    //=============================================================================user related api's=========================================================================
+
+    //? get all the users
+    app.get("/api/user", async (req, res) => {
+      const cursor = userCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    //=============================================================================lawyer profile related api's==============================================================
 
 
-
-
-
-      //=============================================================================user related api's=========================================================================
-      
-      //? get all the users
-      app.get("/api/user", async (req, res) => {
-            const cursor = userCollection.find();
-            const result = await cursor.toArray();
-            res.send(result);
-          });
-
-
-      
-      
-      //=============================================================================lawyer profile related api's==============================================================
-      app.post("/api/lawyerProfiles", async (req, res) => {
-          const legalProfile = req.body;
-          const newLegalProfile = {
-              ...legalProfile,
-              createdAt: new Date()
-          }
-          const result = await lawyerProfilesCollection.insertOne(newLegalProfile)
-          res.send(result);
-      })
-      
+    //! post legal profile
+    app.post("/api/lawyerProfiles", async (req, res) => {
+      const legalProfile = req.body;
+      const newLegalProfile = {
+        ...legalProfile,
+        createdAt: new Date(),
+      };
+      const result = await lawyerProfilesCollection.insertOne(newLegalProfile);
+      res.send(result);
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
