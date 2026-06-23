@@ -120,6 +120,28 @@ async function run() {
       }
     });
 
+    // ! Update lawyer profile status (approved / pending / rejected)
+    app.patch(
+      "/api/admin/lawyerProfiles/change-status/:id",
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const { status } = req.body; // pending, approved, rejected
+          const filter = { _id: new ObjectId(id) };
+          const updateDoc = { $set: { status: status } };
+          const result = await lawyerProfilesCollection.updateOne(
+            filter,
+            updateDoc,
+          );
+          res.send(result);
+        } catch (error) {
+          res
+            .status(500)
+            .send({ message: "Internal Server Error", error: error.message });
+        }
+      },
+    );
+
 
 
     //! get individual legal profile
