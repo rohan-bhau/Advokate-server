@@ -195,6 +195,52 @@ async function run() {
 
     //=============================================================================lawyer profile related api's==============================================================
 
+    // ! Get a single legal profile by MongoDB ID
+    app.get("/api/lawyerProfiles/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await lawyerProfilesCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        if (!result) {
+          return res.status(404).send({ message: "Profile not found" });
+        }
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    // ! Update legal profile by MongoDB ID
+    app.put("/api/lawyerProfiles/update/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedData = req.body;
+        const filter = { _id: new ObjectId(id) };
+
+        delete updatedData._id;
+
+        const updateDoc = {
+          $set: {
+            ...updatedData,
+            updatedAt: new Date(),
+          },
+        };
+
+        const result = await lawyerProfilesCollection.updateOne(
+          filter,
+          updateDoc,
+        );
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
     //! post legal profile
     app.post("/api/lawyerProfiles", async (req, res) => {
       const legalProfile = req.body;
