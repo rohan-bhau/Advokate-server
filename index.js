@@ -252,6 +252,22 @@ async function run() {
       res.send(result);
     });
 
+    // ! Delete lawyer profile by individual creator
+    app.delete("/api/lawyerProfiles/delete/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await lawyerProfilesCollection.deleteOne(query);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    // ======================================================================================================================================
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
