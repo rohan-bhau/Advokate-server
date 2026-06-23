@@ -142,7 +142,19 @@ async function run() {
       },
     );
 
-
+    // ! Delete lawyer profile
+    app.delete("/api/admin/lawyerProfiles/delete/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await lawyerProfilesCollection.deleteOne(query);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
 
     //! get individual legal profile
     app.get("/api/my/lawyerProfiles", async (req, res) => {
