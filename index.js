@@ -124,6 +124,15 @@ async function run() {
       res.send(result);
     });
 
+    // ? update user role
+    app.patch("/api/user/change-role/:id", async (req, res) => {
+      const id = req.params.id;
+      const { role } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = { $set: { role: role } };
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
 
     // ? delete user
     app.delete("/api/user/delete/:id", async (req, res) => {
