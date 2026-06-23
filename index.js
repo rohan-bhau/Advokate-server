@@ -105,6 +105,23 @@ async function run() {
       }
     });
 
+    //! lawyers profile page for admin
+    app.get("/api/admin/lawyerProfiles", async (req, res) => {
+      try {
+        const result = await lawyerProfilesCollection
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+
+
     //! get individual legal profile
     app.get("/api/my/lawyerProfiles", async (req, res) => {
       const query = {};
