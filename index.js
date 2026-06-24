@@ -37,6 +37,9 @@ async function run() {
     //! lawyerProfiles collection
     const lawyerProfilesCollection = database.collection("lawyerProfiles");
 
+    //! hiringRequest collection
+const hiringRequestsCollection = database.collection("hiringRequests");
+
     //=============================================================================user related api's=========================================================================
 
     //!get legal profiles
@@ -265,6 +268,76 @@ async function run() {
           .send({ message: "Internal Server Error", error: error.message });
       }
     });
+
+
+
+    // ===================================================================================lawyer hiring related api's======================================================
+
+
+    //! get the hiring requests
+ app.get("/api/client/hiring-status", async (req, res) => {
+   try {
+     const { lawyerId, clientId } = req.query;
+
+     if (!clientId || !lawyerId) {
+       return res.send({ hasApplied: false });
+     }
+
+     const request = await hiringRequestsCollection.findOne({
+       lawyerId: lawyerId,
+       clientId: clientId,
+     });
+
+     res.send({ hasApplied: !!request });
+   } catch (error) {
+     res
+       .status(500)
+       .send({ message: "Internal Server Error", error: error.message });
+   }
+ });
+
+
+    // ! new hiring request post to the database
+app.post("/api/client/hire-lawyer", async (req, res) => {
+  try {
+    const hiringRequest = req.body;
+
+    if (!hiringRequest.clientId || !hiringRequest.lawyerId) {
+      return res
+        .status(400)
+        .send({ message: "ClientId and LawyerId are required fields." });
+    }
+
+    const existingRequest = await hiringRequestsCollection.findOne({
+      lawyerId: hiringRequest.lawyerId,
+      clientId: hiringRequest.clientId,
+    });
+
+    if (existingRequest) {
+      return res
+        .status(400)
+        .send({
+          message: "You have already submitted a request to this lawyer.",
+        });
+    }
+
+    const newHiringRequest = {
+      ...hiringRequest,
+      status: "pending",
+      paymentStatus: "pending",
+      caseStatus: "active",
+      createdAt: new Date(),
+    };
+
+    const result = await hiringRequestsCollection.insertOne(newHiringRequest);
+    res.status(201).send(result);
+  } catch (error) {
+    res
+      .status(500)
+      .send({ message: "Internal Server Error", error: error.message });
+  }
+});
+
 
     // ======================================================================================================================================
 
