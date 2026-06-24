@@ -271,7 +271,6 @@ async function run() {
 
     // ===================================================================================lawyer hiring related api's======================================================
 
-
     //! get the hiring requests of a lawyer by their unique account email
     app.get("/api/lawyer/hiring-requests", async (req, res) => {
       try {
@@ -285,6 +284,30 @@ async function run() {
 
         const requests = await hiringRequestsCollection
           .find({ lawyerEmail: lawyerEmail })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(requests);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    //! get the hiring requests of a client by their email
+    app.get("/api/client/hiring-requests", async (req, res) => {
+      try {
+        const { clientEmail } = req.query;
+
+        if (!clientEmail) {
+          return res
+            .status(400)
+            .send({ message: "Client email parameter is missing." });
+        }
+
+        const requests = await hiringRequestsCollection
+          .find({ clientEmail: clientEmail })
           .sort({ createdAt: -1 })
           .toArray();
 
@@ -390,7 +413,7 @@ async function run() {
       }
     });
 
-//! update the case status
+    //! update the case status
     app.patch("/api/lawyer/hiring-requests/mark-won/:id", async (req, res) => {
       try {
         const { id } = req.params;
