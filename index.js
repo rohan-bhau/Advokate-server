@@ -29,6 +29,8 @@ async function run() {
     await client.connect();
     // Send a ping to confirm a successful connection
 
+    //=======================================================================db collections====================================================================================
+
     const database = client.db("advokate");
 
     //! user collection
@@ -40,10 +42,12 @@ async function run() {
     //! hiringRequest collection
     const hiringRequestsCollection = database.collection("hiringRequests");
 
+    //! review collection
+    const reviewCollection = database.collection("reviews");
+
     //=============================================================================user related api's=========================================================================
 
-    //!get legal profiles
-    //! get legal profiles with search, filter, backend sorting & pagination
+    //! get legal profiles with search, filter, backend sorting & pagination + Real-time Review Aggregation
     app.get("/api/lawyerProfiles", async (req, res) => {
       try {
         const {
@@ -55,7 +59,6 @@ async function run() {
           limit = 8,
         } = req.query;
 
-        // ?
         let query = { status: "approved" };
 
         if (search) {
@@ -88,10 +91,40 @@ async function run() {
           await lawyerProfilesCollection.countDocuments(query);
 
         const result = await lawyerProfilesCollection
-          .find(query)
-          .sort(sortQuery)
-          .skip(skip)
-          .limit(limitNumber)
+          .aggregate([
+            { $match: query }, 
+            { $sort: sortQuery }, 
+            { $skip: skip }, 
+            { $limit: limitNumber }, 
+            {
+              $lookup: {
+                from: "reviews",
+                let: { idStr: { $toString: "$_id" } },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: { $eq: ["$lawyerId", "$$idStr"] }, 
+                    },
+                  },
+                ],
+                as: "lawyerReviews",
+              },
+            },
+            {
+              $addFields: {
+                totalReviews: { $size: "$lawyerReviews" }, 
+                averageRating: {
+                  $ifNull: [
+                    { $round: [{ $avg: "$lawyerReviews.rating" }, 1] }, 
+                    0.0,
+                  ],
+                },
+              },
+            },
+            {
+              $project: { lawyerReviews: 0 },
+            },
+          ])
           .toArray();
 
         res.send({
@@ -365,7 +398,10 @@ async function run() {
           clientId: clientId,
         });
 
-        res.send({ hasApplied: !!request });
+        res.send({
+          hasApplied: !!request,
+          status: request ? request.status : null,
+        });
       } catch (error) {
         res
           .status(500)
@@ -430,6 +466,86 @@ async function run() {
           .collection("hiringRequests")
           .updateOne(filter, updateDoc);
         res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    // =================================================================================== Review Related APIs ======================================================
+
+    // ! post new review data
+    app.post("/api/reviews", async (req, res) => {
+      try {
+        const reviewData = req.body;
+
+        if (
+          !reviewData.lawyerId ||
+          !reviewData.clientId ||
+          !reviewData.rating
+        ) {
+          return res.status(400).send({
+            message:
+              "Required fields (lawyerId, clientId, rating) are missing.",
+          });
+        }
+
+        const newReview = {
+          ...reviewData,
+          rating: parseFloat(reviewData.rating),
+          createdAt: new Date(),
+        };
+
+        const result = await reviewCollection.insertOne(newReview);
+        res.status(201).send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    // ! get all the review using the lawyer id
+    app.get("/api/reviews/:lawyerId", async (req, res) => {
+      try {
+        const { lawyerId } = req.params;
+
+        const reviews = await reviewCollection
+          .find({ lawyerId: lawyerId })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(reviews);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    //!===========================================================================total hires and case won api================================================
+    app.get("/api/lawyers/:email/stats", async (req, res) => {
+      try {
+        const { email } = req.params;
+
+        if (!email) {
+          return res
+            .status(400)
+            .send({ message: "Lawyer email parameter is required." });
+        }
+
+        const totalHires = await hiringRequestsCollection.countDocuments({
+          lawyerEmail: email,
+          status: "accepted",
+        });
+
+        const casesWon = await hiringRequestsCollection.countDocuments({
+          lawyerEmail: email,
+          caseStatus: "won",
+        });
+
+        res.send({ totalHires, casesWon });
       } catch (error) {
         res
           .status(500)
