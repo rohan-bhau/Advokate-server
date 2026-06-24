@@ -38,7 +38,7 @@ async function run() {
     const lawyerProfilesCollection = database.collection("lawyerProfiles");
 
     //! hiringRequest collection
-const hiringRequestsCollection = database.collection("hiringRequests");
+    const hiringRequestsCollection = database.collection("hiringRequests");
 
     //=============================================================================user related api's=========================================================================
 
@@ -269,75 +269,126 @@ const hiringRequestsCollection = database.collection("hiringRequests");
       }
     });
 
-
-
     // ===================================================================================lawyer hiring related api's======================================================
 
 
-    //! get the hiring requests
- app.get("/api/client/hiring-status", async (req, res) => {
-   try {
-     const { lawyerId, clientId } = req.query;
+    //! get the hiring requests of a lawyer by their unique account email
+    app.get("/api/lawyer/hiring-requests", async (req, res) => {
+      try {
+        const { lawyerEmail } = req.query;
 
-     if (!clientId || !lawyerId) {
-       return res.send({ hasApplied: false });
-     }
+        if (!lawyerEmail) {
+          return res
+            .status(400)
+            .send({ message: "Lawyer email parameter is missing." });
+        }
 
-     const request = await hiringRequestsCollection.findOne({
-       lawyerId: lawyerId,
-       clientId: clientId,
-     });
+        const requests = await hiringRequestsCollection
+          .find({ lawyerEmail: lawyerEmail })
+          .sort({ createdAt: -1 })
+          .toArray();
 
-     res.send({ hasApplied: !!request });
-   } catch (error) {
-     res
-       .status(500)
-       .send({ message: "Internal Server Error", error: error.message });
-   }
- });
-
-
-    // ! new hiring request post to the database
-app.post("/api/client/hire-lawyer", async (req, res) => {
-  try {
-    const hiringRequest = req.body;
-
-    if (!hiringRequest.clientId || !hiringRequest.lawyerId) {
-      return res
-        .status(400)
-        .send({ message: "ClientId and LawyerId are required fields." });
-    }
-
-    const existingRequest = await hiringRequestsCollection.findOne({
-      lawyerId: hiringRequest.lawyerId,
-      clientId: hiringRequest.clientId,
+        res.send(requests);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
     });
 
-    if (existingRequest) {
-      return res
-        .status(400)
-        .send({
-          message: "You have already submitted a request to this lawyer.",
+    // ! update hiring request api
+    app.patch("/api/lawyer/hiring-requests/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!["accepted", "rejected"].includes(status)) {
+          return res
+            .status(400)
+            .send({ message: "Invalid status parameters shift." });
+        }
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            status: status,
+            updatedAt: new Date(),
+          },
+        };
+
+        const result = await hiringRequestsCollection.updateOne(
+          filter,
+          updateDoc,
+        );
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    //! get the hiring requests
+    app.get("/api/client/hiring-status", async (req, res) => {
+      try {
+        const { lawyerId, clientId } = req.query;
+
+        if (!clientId || !lawyerId) {
+          return res.send({ hasApplied: false });
+        }
+
+        const request = await hiringRequestsCollection.findOne({
+          lawyerId: lawyerId,
+          clientId: clientId,
         });
-    }
 
-    const newHiringRequest = {
-      ...hiringRequest,
-      status: "pending",
-      paymentStatus: "pending",
-      caseStatus: "active",
-      createdAt: new Date(),
-    };
+        res.send({ hasApplied: !!request });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
 
-    const result = await hiringRequestsCollection.insertOne(newHiringRequest);
-    res.status(201).send(result);
-  } catch (error) {
-    res
-      .status(500)
-      .send({ message: "Internal Server Error", error: error.message });
-  }
-});
+    // ! new hiring request post to the database
+    app.post("/api/client/hire-lawyer", async (req, res) => {
+      try {
+        const hiringRequest = req.body;
 
+        if (!hiringRequest.clientId || !hiringRequest.lawyerId) {
+          return res
+            .status(400)
+            .send({ message: "ClientId and LawyerId are required fields." });
+        }
+
+        const existingRequest = await hiringRequestsCollection.findOne({
+          lawyerId: hiringRequest.lawyerId,
+          clientId: hiringRequest.clientId,
+        });
+
+        if (existingRequest) {
+          return res.status(400).send({
+            message: "You have already submitted a request to this lawyer.",
+          });
+        }
+
+        const newHiringRequest = {
+          ...hiringRequest,
+          status: "pending",
+          paymentStatus: "pending",
+          caseStatus: "active",
+          createdAt: new Date(),
+        };
+
+        const result =
+          await hiringRequestsCollection.insertOne(newHiringRequest);
+        res.status(201).send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
 
     // ======================================================================================================================================
 
