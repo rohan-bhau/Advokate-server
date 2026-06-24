@@ -390,6 +390,30 @@ async function run() {
       }
     });
 
+//! update the case status
+    app.patch("/api/lawyer/hiring-requests/mark-won/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            caseStatus: "won",
+            updatedAt: new Date(),
+          },
+        };
+
+        const result = await database
+          .collection("hiringRequests")
+          .updateOne(filter, updateDoc);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
     // ======================================================================================================================================
 
     await client.db("admin").command({ ping: 1 });
