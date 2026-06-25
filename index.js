@@ -51,7 +51,38 @@ async function run() {
     //! clientPaymentCollection
     const clientPaymentCollection = database.collection("clientPayments");
 
-    //=============================================================================user related api's=========================================================================
+    //========================================================================================================================================================================
+
+    // ! Update user profile (Name, Email & Image)
+    app.patch("/api/user/update-profile/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { name, email, image } = req.body;
+
+        if (!name || !email) {
+          return res
+            .status(400)
+            .send({ message: "Name and Email are required fields." });
+        }
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            name: name,
+            email: email,
+            image: image, // Stores ImgBB string URL safely
+            updatedAt: new Date(),
+          },
+        };
+
+        const result = await userCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
 
     //! get legal profiles with search, filter, backend sorting & pagination + Real-time Review Aggregation
     app.get("/api/lawyerProfiles", async (req, res) => {
