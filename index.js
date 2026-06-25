@@ -45,6 +45,12 @@ async function run() {
     //! review collection
     const reviewCollection = database.collection("reviews");
 
+    //! lawyerPaymentCollection
+    const lawyerPaymentCollection = database.collection("lawyerPayments");
+
+    //! clientPaymentCollection
+    const clientPaymentCollection = database.collection("clientPayments");
+
     //=============================================================================user related api's=========================================================================
 
     //! get legal profiles with search, filter, backend sorting & pagination + Real-time Review Aggregation
@@ -606,6 +612,124 @@ async function run() {
         const query = { _id: new ObjectId(id) };
         const result = await reviewCollection.deleteOne(query);
         res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    // =================================================================================== Stripe Payment Audit Ledger APIs ======================================================
+
+    app.patch("/api/lawyer/update-plan/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { planStatus, sessionId, amount, userEmail } = req.body;
+
+        if (!planStatus) {
+          return res
+            .status(400)
+            .send({ message: "Plan status parameter is required." });
+        }
+
+        const userFilter = { _id: new ObjectId(id) };
+        const userUpdateDoc = {
+          $set: {
+            plan: planStatus,
+            updatedAt: new Date(),
+          },
+        };
+        await userCollection.updateOne(userFilter, userUpdateDoc);
+
+        const paymentReceipt = {
+          lawyerId: id,
+          lawyerEmail: userEmail || "",
+          stripeSessionId: sessionId || "",
+          amountPaid: amount ? parseFloat(amount) : 149.0,
+          currency: "USD",
+          paymentType: "lifetime_profile_activation",
+          paymentStatus: "completed",
+          createdAt: new Date(),
+        };
+        const paymentResult =
+          await lawyerPaymentCollection.insertOne(paymentReceipt);
+
+        res.send({
+          success: true,
+          message:
+            "Lawyer profile activated and payment ledger audited successfully.",
+          paymentId: paymentResult.insertedId,
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    app.patch("/api/client/update-hiring-payment", async (req, res) => {
+      try {
+        const {
+          lawyerId,
+          clientId,
+          sessionId,
+          amount,
+          clientEmail,
+          lawyerEmail,
+        } = req.body;
+
+        if (!lawyerId || !clientId) {
+          return res
+            .status(400)
+            .send({
+              message: "Required parameters (lawyerId, clientId) are missing.",
+            });
+        }
+
+
+        const hiringFilter = {
+          clientId: clientId,
+          paymentStatus: "pending",
+          $or: [
+            { lawyerId: lawyerId },
+            { _id: new ObjectId(lawyerId) }, 
+          ],
+        };
+
+        const hiringUpdateDoc = {
+          $set: {
+            paymentStatus: "paid",
+            updatedAt: new Date(),
+          },
+        };
+
+        const hiringResult = await hiringRequestsCollection.updateOne(
+          hiringFilter,
+          hiringUpdateDoc,
+        );
+
+        const clientReceipt = {
+          clientId: clientId,
+          clientEmail: clientEmail || "",
+          lawyerId: lawyerId,
+          lawyerEmail: lawyerEmail || "",
+          stripeSessionId: sessionId || "",
+          amountPaid: amount ? parseFloat(amount) : 0.0,
+          currency: "USD",
+          paymentType: "lawyer_retainer_hire",
+          paymentStatus: "completed",
+          createdAt: new Date(),
+        };
+        const paymentResult =
+          await clientPaymentCollection.insertOne(clientReceipt);
+
+        res.send({
+          success: true,
+          message: "Hiring request payment updated dynamically.",
+          hiringMatchedCount: hiringResult.matchedCount,
+          hiringModifiedCount: hiringResult.modifiedCount,
+          paymentId: paymentResult.insertedId,
+        });
       } catch (error) {
         res
           .status(500)
