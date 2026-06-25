@@ -772,6 +772,118 @@ async function run() {
       }
     });
 
+    //! =============================================================================================================admin analytical related api=========================================
+    app.get("/api/admin/analytics-data", async (req, res) => {
+      try {
+        const totalUsers = await userCollection.countDocuments();
+        const totalLawyers = await lawyerProfilesCollection.countDocuments();
+        const totalHires = await hiringRequestsCollection.countDocuments({
+          status: "accepted",
+        });
+
+        const revenueData = await lawyerPaymentCollection
+          .aggregate([
+            { $group: { _id: null, total: { $sum: "$amountPaid" } } },
+          ])
+          .toArray();
+        const totalRevenue = revenueData.length > 0 ? revenueData[0].total : 0;
+
+        const recentPayments = await lawyerPaymentCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .limit(3)
+          .toArray();
+        const recentHires = await hiringRequestsCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .limit(2)
+          .toArray();
+
+        const recentActivities = [
+          ...recentPayments.map((p) => ({
+            activity: "Payment Received",
+            details: `$${p.amountPaid} from ${p.lawyerEmail}`,
+            date: p.createdAt,
+          })),
+          ...recentHires.map((h) => ({
+            activity: `Hire Request ${h.status}`,
+            details: `${h.clientName} hired ${h.lawyerName}`,
+            date: h.createdAt,
+          })),
+        ]
+          .sort((a, b) => new Date(b.date) - new Date(a.date))
+          .slice(0, 5);
+
+  
+        const revenueOverview = await lawyerPaymentCollection
+          .aggregate([
+            {
+              $group: {
+                _id: { $dateToString: { format: "%b %d", date: "$createdAt" } },
+                revenue: { $sum: "$amountPaid" },
+              },
+            },
+            { $sort: { _id: 1 } },
+            { $project: { _id: 0, name: "$_id", revenue: 1 } },
+          ])
+          .toArray();
+
+        const hiresOverTime = await hiringRequestsCollection
+          .aggregate([
+            {
+              $group: {
+                _id: { $dateToString: { format: "%b %d", date: "$createdAt" } },
+                hires: { $sum: 1 },
+              },
+            },
+            { $sort: { _id: 1 } },
+            { $project: { _id: 0, name: "$_id", hires: 1 } },
+          ])
+          .toArray();
+
+        const roleCounts = await userCollection
+          .aggregate([{ $group: { _id: "$role", value: { $sum: 1 } } }])
+          .toArray();
+
+        const colorMap = {
+          client: "#1D44B7",
+          lawyer: "#10B981",
+          admin: "#F59E0B",
+        };
+        const usersByRole = roleCounts.map((item) => ({
+          name:
+            item._id === "client"
+              ? "User"
+              : item._id === "lawyer"
+                ? "Lawyer"
+                : "Admin",
+          value: item.value,
+          color: colorMap[item._id] || "#6B7280",
+        }));
+
+        res.send({
+          cards: { totalUsers, totalLawyers, totalHires, totalRevenue },
+          recentActivities,
+          revenueOverview:
+            revenueOverview.length > 0
+              ? revenueOverview
+              : [{ name: "No Data", revenue: 0 }],
+          hiresOverTime:
+            hiresOverTime.length > 0
+              ? hiresOverTime
+              : [{ name: "No Data", hires: 0 }],
+          usersByRole:
+            usersByRole.length > 0
+              ? usersByRole
+              : [{ name: "No Users", value: 1, color: "#E5E7EB" }],
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
     // ======================================================================================================================================
 
     await client.db("admin").command({ ping: 1 });
