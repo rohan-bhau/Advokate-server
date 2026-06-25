@@ -679,21 +679,15 @@ async function run() {
         } = req.body;
 
         if (!lawyerId || !clientId) {
-          return res
-            .status(400)
-            .send({
-              message: "Required parameters (lawyerId, clientId) are missing.",
-            });
+          return res.status(400).send({
+            message: "Required parameters (lawyerId, clientId) are missing.",
+          });
         }
-
 
         const hiringFilter = {
           clientId: clientId,
           paymentStatus: "pending",
-          $or: [
-            { lawyerId: lawyerId },
-            { _id: new ObjectId(lawyerId) }, 
-          ],
+          $or: [{ lawyerId: lawyerId }, { _id: new ObjectId(lawyerId) }],
         };
 
         const hiringUpdateDoc = {
@@ -729,6 +723,47 @@ async function run() {
           hiringMatchedCount: hiringResult.matchedCount,
           hiringModifiedCount: hiringResult.modifiedCount,
           paymentId: paymentResult.insertedId,
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    //! ===================================================================================transitions============================================================
+    // transactions for admin
+    app.get("/api/admin/lawyer-transactions", async (req, res) => {
+      try {
+        const { search, page = 1, limit = 10 } = req.query;
+        const pageNumber = parseInt(page);
+        const limitNumber = parseInt(limit);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        let matchQuery = {};
+        if (search) {
+          matchQuery.$or = [
+            { lawyerEmail: { $regex: search, $options: "i" } },
+            { stripeSessionId: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        const totalTransactions =
+          await lawyerPaymentCollection.countDocuments(matchQuery);
+
+        const transactions = await lawyerPaymentCollection
+          .find(matchQuery)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNumber)
+          .toArray();
+
+        res.send({
+          transactions,
+          total: totalTransactions,
+          page: pageNumber,
+          limit: limitNumber,
+          totalPages: Math.ceil(totalTransactions / limitNumber),
         });
       } catch (error) {
         res
