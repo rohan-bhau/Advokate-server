@@ -1011,6 +1011,98 @@ async function run() {
       }
     });
 
+    //! =========================================================================================client analytics and transactions apt==============================================
+    app.get("/api/client/dashboard-metrics", async (req, res) => {
+      try {
+        const { email } = req.query;
+        if (!email) {
+          return res
+            .status(400)
+            .send({ message: "Client email parameter is required." });
+        }
+
+        const totalHires = await hiringRequestsCollection.countDocuments({
+          clientEmail: email,
+        });
+        const acceptedCases = await hiringRequestsCollection.countDocuments({
+          clientEmail: email,
+          status: "accepted",
+        });
+        const completedCases = await hiringRequestsCollection.countDocuments({
+          clientEmail: email,
+          caseStatus: "won",
+        });
+        const pendingRequests = await hiringRequestsCollection.countDocuments({
+          clientEmail: email,
+          status: "pending",
+        });
+
+        const recentHires = await hiringRequestsCollection
+          .find({ clientEmail: email })
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .toArray();
+
+        res.send({
+          metrics: {
+            totalHires,
+            acceptedCases,
+            completedCases,
+            pendingRequests,
+          },
+          recentHires,
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    app.get("/api/client/transactions", async (req, res) => {
+      try {
+        const { email, search, page = 1, limit = 10 } = req.query;
+        if (!email) {
+          return res
+            .status(400)
+            .send({ message: "Client email parameter is required." });
+        }
+
+        const pageNumber = parseInt(page);
+        const limitNumber = parseInt(limit);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        let matchQuery = { clientEmail: email };
+        if (search) {
+          matchQuery.$or = [
+            { lawyerEmail: { $regex: search, $options: "i" } },
+            { stripeSessionId: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        const totalTransactions =
+          await clientPaymentCollection.countDocuments(matchQuery);
+        const transactions = await clientPaymentCollection
+          .find(matchQuery)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNumber)
+          .toArray();
+
+        res.send({
+          transactions,
+          total: totalTransactions,
+          page: pageNumber,
+          limit: limitNumber,
+          totalPages: Math.ceil(totalTransactions / limitNumber),
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
     // ======================================================================================================================================
 
     await client.db("admin").command({ ping: 1 });
