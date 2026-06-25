@@ -92,10 +92,10 @@ async function run() {
 
         const result = await lawyerProfilesCollection
           .aggregate([
-            { $match: query }, 
-            { $sort: sortQuery }, 
-            { $skip: skip }, 
-            { $limit: limitNumber }, 
+            { $match: query },
+            { $sort: sortQuery },
+            { $skip: skip },
+            { $limit: limitNumber },
             {
               $lookup: {
                 from: "reviews",
@@ -103,7 +103,7 @@ async function run() {
                 pipeline: [
                   {
                     $match: {
-                      $expr: { $eq: ["$lawyerId", "$$idStr"] }, 
+                      $expr: { $eq: ["$lawyerId", "$$idStr"] },
                     },
                   },
                 ],
@@ -112,10 +112,10 @@ async function run() {
             },
             {
               $addFields: {
-                totalReviews: { $size: "$lawyerReviews" }, 
+                totalReviews: { $size: "$lawyerReviews" },
                 averageRating: {
                   $ifNull: [
-                    { $round: [{ $avg: "$lawyerReviews.rating" }, 1] }, 
+                    { $round: [{ $avg: "$lawyerReviews.rating" }, 1] },
                     0.0,
                   ],
                 },
@@ -546,6 +546,66 @@ async function run() {
         });
 
         res.send({ totalHires, casesWon });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    //===================================================================================client review page related apis===================================================
+    // ! get the client's all reviews
+    app.get("/api/client/my-reviews", async (req, res) => {
+      try {
+        const { email } = req.query;
+        if (!email) {
+          return res.status(400).send({ message: "Client email is required." });
+        }
+
+        const myReviews = await reviewCollection
+          .find({ clientEmail: email })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(myReviews);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    // ! review update apis
+    app.put("/api/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { rating, comment } = req.body;
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            rating: parseFloat(rating),
+            comment: comment,
+            updatedAt: new Date(),
+          },
+        };
+
+        const result = await reviewCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    // ! review delete apis
+    app.delete("/api/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const query = { _id: new ObjectId(id) };
+        const result = await reviewCollection.deleteOne(query);
+        res.send(result);
       } catch (error) {
         res
           .status(500)
