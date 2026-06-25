@@ -814,7 +814,6 @@ async function run() {
           .sort((a, b) => new Date(b.date) - new Date(a.date))
           .slice(0, 5);
 
-  
         const revenueOverview = await lawyerPaymentCollection
           .aggregate([
             {
@@ -876,6 +875,103 @@ async function run() {
             usersByRole.length > 0
               ? usersByRole
               : [{ name: "No Users", value: 1, color: "#E5E7EB" }],
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    //! ================================================================================================lawyer analytics api=================================================
+    app.get("/api/lawyer/dashboard-metrics", async (req, res) => {
+      try {
+        const { email } = req.query;
+        if (!email) {
+          return res
+            .status(400)
+            .send({ message: "Lawyer email parameter is required." });
+        }
+
+        const totalHires = await hiringRequestsCollection.countDocuments({
+          lawyerEmail: email,
+        });
+        const completedCases = await hiringRequestsCollection.countDocuments({
+          lawyerEmail: email,
+          caseStatus: "won",
+        });
+        const pendingRequests = await hiringRequestsCollection.countDocuments({
+          lawyerEmail: email,
+          status: "pending",
+        });
+
+        const earningsData = await clientPaymentCollection
+          .aggregate([
+            { $match: { lawyerEmail: email, paymentStatus: "completed" } },
+            { $group: { _id: null, total: { $sum: "$amountPaid" } } },
+          ])
+          .toArray();
+        const totalEarnings =
+          earningsData.length > 0 ? earningsData[0].total : 0;
+
+        const recentHires = await hiringRequestsCollection
+          .find({ lawyerEmail: email })
+          .sort({ createdAt: -1 })
+          .limit(4)
+          .toArray();
+
+        res.send({
+          metrics: {
+            totalHires,
+            completedCases,
+            pendingRequests,
+            totalEarnings,
+          },
+          recentHires,
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+    app.get("/api/lawyer/transactions", async (req, res) => {
+      try {
+        const { email, search, page = 1, limit = 10 } = req.query;
+        if (!email) {
+          return res
+            .status(400)
+            .send({ message: "Lawyer email parameter is required." });
+        }
+
+        const pageNumber = parseInt(page);
+        const limitNumber = parseInt(limit);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        let matchQuery = { lawyerEmail: email };
+        if (search) {
+          matchQuery.$or = [
+            { clientEmail: { $regex: search, $options: "i" } },
+            { stripeSessionId: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        const totalTransactions =
+          await clientPaymentCollection.countDocuments(matchQuery);
+        const transactions = await clientPaymentCollection
+          .find(matchQuery)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNumber)
+          .toArray();
+
+        res.send({
+          transactions,
+          total: totalTransactions,
+          page: pageNumber,
+          limit: limitNumber,
+          totalPages: Math.ceil(totalTransactions / limitNumber),
         });
       } catch (error) {
         res
