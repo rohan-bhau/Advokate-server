@@ -12,6 +12,13 @@ app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
+// const logger = (req, res, next) => {
+//   console.log("logger logged", req.params)
+//   next()
+// }
+
+
+
 // ? mongodb uri
 const uri = process.env.MONGO_URI;
 
@@ -50,39 +57,117 @@ async function run() {
 
     //! clientPaymentCollection
     const clientPaymentCollection = database.collection("clientPayments");
+    const sessionCollection = database.collection("session");
+
+    //! verification related
+    const verifyToken = async (req, res, next) => {
+      console.log("headers", req.headers);
+      const authHeader = req.headers?.authorization;
+      if (!authHeader) {
+        return res.status(401).send({ message: "unauthorized access" });
+      }
+
+      const token = authHeader.split(" ")[1];
+
+      if (!token) {
+        return res.status(401).send({ message: "unauthorized access" });
+      }
+
+      const query = { token: token };
+
+      const session = await sessionCollection.findOne(query);
+      // console.log(session)
+
+            if (!session) {
+              return res.status(401).send({ message: "unauthorized access" });
+            }
+
+      const userId = session.userId;
+      // console.log('user id of the session', userId)
+
+      const userQuery = {
+        _id: userId,
+      };
+
+      const user = await userCollection.findOne(userQuery);
+
+            if (!user) {
+              return res.status(401).send({ message: "unauthorized access" });
+            }
+
+      req.user = user;
+      // console.log("user info", user)
+
+      next();
+    };
+
+    //!verify client, and must be used after verify token
+    const verifyClient = async (req, res, next) => {
+      if (req.user?.role !== "client") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
+      next();
+    };
+
+    //!verify lawyer, and must be used after verify token
+    const verifyLawyer = async (req, res, next) => {
+    if (req.user?.role !== "lawyer") {
+      return res.status(403).send({ message: "forbidden access" });
+    }
+      next()
+    }
+
+    //!verify admin, and must be used after verify token
+    const verifyAdmin = async (req, res, next) => {
+      if (req.user?.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
 
     //========================================================================================================================================================================
 
     // ! Update user profile (Name, Email & Image)
-    app.patch("/api/user/update-profile/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const { name, email, image } = req.body;
+    app.patch(
+      "/api/user/update-profile/:id",
+      verifyToken,
+      verifyClient,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const { name, email, image } = req.body;
 
-        if (!name || !email) {
-          return res
-            .status(400)
-            .send({ message: "Name and Email are required fields." });
+          if (!name || !email) {
+            return res
+              .status(400)
+              .send({ message: "Name and Email are required fields." });
+          }
+
+          console.log(req.user, id);
+          if (req.user._id.toString() !== id) {
+            return res.status(403).send({ message: "forbidden access" });
+          }
+
+          const filter = { _id: new ObjectId(id) };
+          const updateDoc = {
+            $set: {
+              name: name,
+              email: email,
+              image: image, // Stores ImgBB string URL safely
+              updatedAt: new Date(),
+            },
+          };
+
+          const result = await userCollection.updateOne(filter, updateDoc);
+          res.send(result);
+        } catch (error) {
+          res
+            .status(500)
+            .send({ message: "Internal Server Error", error: error.message });
         }
-
-        const filter = { _id: new ObjectId(id) };
-        const updateDoc = {
-          $set: {
-            name: name,
-            email: email,
-            image: image, // Stores ImgBB string URL safely
-            updatedAt: new Date(),
-          },
-        };
-
-        const result = await userCollection.updateOne(filter, updateDoc);
-        res.send(result);
-      } catch (error) {
-        res
-          .status(500)
-          .send({ message: "Internal Server Error", error: error.message });
-      }
-    });
+      },
+    );
 
     //! get legal profiles with search, filter, backend sorting & pagination + Real-time Review Aggregation
     app.get("/api/lawyerProfiles", async (req, res) => {
@@ -179,7 +264,7 @@ async function run() {
     });
 
     //! lawyers profile page for admin
-    app.get("/api/admin/lawyerProfiles", async (req, res) => {
+    app.get("/api/admin/lawyerProfiles", verifyToken,verifyAdmin, async (req, res) => {
       try {
         const result = await lawyerProfilesCollection
           .find({})
@@ -196,6 +281,8 @@ async function run() {
     // ! Update lawyer profile status (approved / pending / rejected)
     app.patch(
       "/api/admin/lawyerProfiles/change-status/:id",
+      verifyToken,
+      verifyAdmin,
       async (req, res) => {
         try {
           const id = req.params.id;
@@ -216,7 +303,7 @@ async function run() {
     );
 
     // ! Delete lawyer profile
-    app.delete("/api/admin/lawyerProfiles/delete/:id", async (req, res) => {
+    app.delete("/api/admin/lawyerProfiles/delete/:id",verifyToken, verifyAdmin, async (req, res) => {
       try {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
@@ -242,24 +329,30 @@ async function run() {
     //=============================================================================user related api's =======================================================
 
     //? get all the users
-    app.get("/api/user", async (req, res) => {
+    app.get("/api/user",verifyToken,verifyAdmin, async (req, res) => {
       const cursor = userCollection.find();
       const result = await cursor.toArray();
       res.send(result);
     });
 
     // ? update user role
-    app.patch("/api/user/change-role/:id", async (req, res) => {
-      const id = req.params.id;
-      const { role } = req.body;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = { $set: { role: role } };
-      const result = await userCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
+    app.patch(
+      "/api/user/change-role/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const { role } = req.body;
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = { $set: { role: role } };
+        const result = await userCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      },
+    );
 
     // ? delete user
-    app.delete("/api/user/delete/:id", async (req, res) => {
+    app.delete("/api/user/delete/:id",verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await userCollection.deleteOne(query);
@@ -287,7 +380,7 @@ async function run() {
     });
 
     // ! Update legal profile by MongoDB ID
-    app.put("/api/lawyerProfiles/update/:id", async (req, res) => {
+    app.put("/api/lawyerProfiles/update/:id",verifyToken, verifyLawyer, async (req, res) => {
       try {
         const id = req.params.id;
         const updatedData = req.body;
@@ -315,7 +408,7 @@ async function run() {
     });
 
     //! post legal profile
-    app.post("/api/lawyerProfiles", async (req, res) => {
+    app.post("/api/lawyerProfiles",verifyToken, verifyLawyer, async (req, res) => {
       const legalProfile = req.body;
       const newLegalProfile = {
         ...legalProfile,
@@ -326,7 +419,7 @@ async function run() {
     });
 
     // ! Delete lawyer profile by individual creator
-    app.delete("/api/lawyerProfiles/delete/:id", async (req, res) => {
+    app.delete("/api/lawyerProfiles/delete/:id",verifyToken, verifyLawyer, async (req, res) => {
       try {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
@@ -342,7 +435,7 @@ async function run() {
     // ===================================================================================lawyer hiring related api's======================================================
 
     //! get the hiring requests of a lawyer by their unique account email
-    app.get("/api/lawyer/hiring-requests", async (req, res) => {
+    app.get("/api/lawyer/hiring-requests",verifyToken,verifyLawyer, async (req, res) => {
       try {
         const { lawyerEmail } = req.query;
 
@@ -366,31 +459,41 @@ async function run() {
     });
 
     //! get the hiring requests of a client by their email
-    app.get("/api/client/hiring-requests", async (req, res) => {
-      try {
-        const { clientEmail } = req.query;
+    app.get(
+      "/api/client/hiring-requests",
+      verifyToken,
+      verifyClient,
+      async (req, res) => {
+        try {
+          const { clientEmail } = req.query;
 
-        if (!clientEmail) {
-          return res
-            .status(400)
-            .send({ message: "Client email parameter is missing." });
+          if (!clientEmail) {
+            return res
+              .status(400)
+              .send({ message: "Client email parameter is missing." });
+          }
+
+          // console.log(req.user, req.query.clientEmail)
+          if (req.user.email !== req.query.clientEmail) {
+            return res.status(403).send({ message: "forbidden access" });
+          }
+
+          const requests = await hiringRequestsCollection
+            .find({ clientEmail: clientEmail })
+            .sort({ createdAt: -1 })
+            .toArray();
+
+          res.send(requests);
+        } catch (error) {
+          res
+            .status(500)
+            .send({ message: "Internal Server Error", error: error.message });
         }
-
-        const requests = await hiringRequestsCollection
-          .find({ clientEmail: clientEmail })
-          .sort({ createdAt: -1 })
-          .toArray();
-
-        res.send(requests);
-      } catch (error) {
-        res
-          .status(500)
-          .send({ message: "Internal Server Error", error: error.message });
-      }
-    });
+      },
+    );
 
     // ! update hiring request api
-    app.patch("/api/lawyer/hiring-requests/:id", async (req, res) => {
+    app.patch("/api/lawyer/hiring-requests/:id",verifyToken, verifyLawyer, async (req, res) => {
       try {
         const { id } = req.params;
         const { status } = req.body;
@@ -447,7 +550,7 @@ async function run() {
     });
 
     // ! new hiring request post to the database
-    app.post("/api/client/hire-lawyer", async (req, res) => {
+    app.post("/api/client/hire-lawyer",verifyToken,verifyClient, async (req, res) => {
       try {
         const hiringRequest = req.body;
 
@@ -487,7 +590,7 @@ async function run() {
     });
 
     //! update the case status
-    app.patch("/api/lawyer/hiring-requests/mark-won/:id", async (req, res) => {
+    app.patch("/api/lawyer/hiring-requests/mark-won/:id",verifyToken, verifyLawyer, async (req, res) => {
       try {
         const { id } = req.params;
 
@@ -513,7 +616,7 @@ async function run() {
     // =================================================================================== Review Related APIs ======================================================
 
     // ! post new review data
-    app.post("/api/reviews", async (req, res) => {
+    app.post("/api/reviews",verifyToken, verifyClient, async (req, res) => {
       try {
         const reviewData = req.body;
 
@@ -613,7 +716,7 @@ async function run() {
     });
 
     // ! review update apis
-    app.put("/api/reviews/:id", async (req, res) => {
+    app.put("/api/reviews/:id",verifyToken, verifyClient, async (req, res) => {
       try {
         const { id } = req.params;
         const { rating, comment } = req.body;
@@ -637,7 +740,7 @@ async function run() {
     });
 
     // ! review delete apis
-    app.delete("/api/reviews/:id", async (req, res) => {
+    app.delete("/api/reviews/:id",verifyToken,verifyClient, async (req, res) => {
       try {
         const { id } = req.params;
         const query = { _id: new ObjectId(id) };
@@ -652,7 +755,7 @@ async function run() {
 
     // =================================================================================== Stripe Payment Audit Ledger APIs ======================================================
 
-    app.patch("/api/lawyer/update-plan/:id", async (req, res) => {
+    app.patch("/api/lawyer/update-plan/:id",verifyToken, verifyLawyer, async (req, res) => {
       try {
         const { id } = req.params;
         const { planStatus, sessionId, amount, userEmail } = req.body;
@@ -698,7 +801,7 @@ async function run() {
       }
     });
 
-    app.patch("/api/client/update-hiring-payment", async (req, res) => {
+    app.patch("/api/client/update-hiring-payment",verifyToken, verifyClient, async (req, res) => {
       try {
         const {
           lawyerId,
@@ -764,7 +867,7 @@ async function run() {
 
     //! ===================================================================================transitions============================================================
     // transactions for admin
-    app.get("/api/admin/lawyer-transactions", async (req, res) => {
+    app.get("/api/admin/lawyer-transactions",verifyToken, verifyAdmin, async (req, res) => {
       try {
         const { search, page = 1, limit = 10 } = req.query;
         const pageNumber = parseInt(page);
@@ -804,7 +907,7 @@ async function run() {
     });
 
     //! =============================================================================================================admin analytical related api=========================================
-    app.get("/api/admin/analytics-data", async (req, res) => {
+    app.get("/api/admin/analytics-data",verifyToken, verifyAdmin, async (req, res) => {
       try {
         const totalUsers = await userCollection.countDocuments();
         const totalLawyers = await lawyerProfilesCollection.countDocuments();
@@ -1059,7 +1162,7 @@ async function run() {
       }
     });
 
-    app.get("/api/client/transactions", async (req, res) => {
+    app.get("/api/client/transactions", verifyToken, async (req, res) => {
       try {
         const { email, search, page = 1, limit = 10 } = req.query;
         if (!email) {
@@ -1105,7 +1208,7 @@ async function run() {
 
     // ======================================================================================================================================
 
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
     );
