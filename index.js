@@ -1214,53 +1214,11 @@ const client = new MongoClient(uri, {
 //! ========================================================================================================================================================
     app.get("/api/home/featured-lawyers", async (req, res) => {
       try {
-        const featuredLawyers = await reviewCollection
-          .aggregate([
-            {
-              $group: {
-                _id: "$lawyerId",
-                averageRating: { $avg: "$rating" },
-                totalReviews: { $sum: 1 },
-              },
-            },
-            { $sort: { averageRating: -1, totalReviews: -1 } },
-            { $limit: 6 },
-            {
-              $lookup: {
-                from: "lawyerProfiles", 
-                let: { lawyerIdStr: "$_id" },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $or: [
-                          { $eq: ["$_id", { $toObjectId: "$$lawyerIdStr" }] },
-                          { $eq: ["$_id", "$$lawyerIdStr"] },
-                          { $eq: ["$lawyerId", "$$lawyerIdStr"] },
-                        ],
-                      },
-                    },
-                  },
-                ],
-                as: "profile",
-              },
-            },
-            { $unwind: "$profile" },
-            {
-              $project: {
-                _id: "$profile._id",
-                professionalName: "$profile.professionalName",
-                specialization: "$profile.specialization",
-                image: "$profile.image",
-                hourlyFee: "$profile.hourlyFee",
-                location: "$profile.location",
-                availabilityStatus: "$profile.availabilityStatus",
-                averageRating: { $round: ["$averageRating", 1] },
-                totalReviews: "$totalReviews",
-              },
-            },
-          ])
-          .toArray();
+const featuredLawyers = await lawyerProfilesCollection
+  .find({}) 
+  .sort({ _id: -1 }) 
+  .limit(6) 
+  .toArray();
 
         const topExperts = await hiringRequestsCollection
           .aggregate([
