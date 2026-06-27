@@ -35,9 +35,9 @@ const client = new MongoClient(uri, {
 //     await client.connect();
 // Send a ping to confirm a successful connection
     
-client.connect(() => {
-  console.log('connecting to mongodb')
-}).catch(console.dir)
+// client.connect(() => {
+//   console.log('connecting to mongodb')
+// }).catch(console.dir)
 
     //=======================================================================db collections====================================================================================
 
@@ -1206,6 +1206,159 @@ client.connect(() => {
         res
           .status(500)
           .send({ message: "Internal Server Error", error: error.message });
+      }
+    });
+
+
+//!========================================================================================================================================================
+//! ========================================================================================================================================================
+    app.get("/api/home/featured-lawyers", async (req, res) => {
+      try {
+        const featuredLawyers = await reviewCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$lawyerId",
+                averageRating: { $avg: "$rating" },
+                totalReviews: { $sum: 1 },
+              },
+            },
+            { $sort: { averageRating: -1, totalReviews: -1 } },
+            { $limit: 6 },
+            {
+              $lookup: {
+                from: "lawyerProfiles", 
+                let: { lawyerIdStr: "$_id" },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $or: [
+                          { $eq: ["$_id", { $toObjectId: "$$lawyerIdStr" }] },
+                          { $eq: ["$_id", "$$lawyerIdStr"] },
+                          { $eq: ["$lawyerId", "$$lawyerIdStr"] },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                as: "profile",
+              },
+            },
+            { $unwind: "$profile" },
+            {
+              $project: {
+                _id: "$profile._id",
+                professionalName: "$profile.professionalName",
+                specialization: "$profile.specialization",
+                image: "$profile.image",
+                hourlyFee: "$profile.hourlyFee",
+                location: "$profile.location",
+                availabilityStatus: "$profile.availabilityStatus",
+                averageRating: { $round: ["$averageRating", 1] },
+                totalReviews: "$totalReviews",
+              },
+            },
+          ])
+          .toArray();
+
+        const topExperts = await hiringRequestsCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$lawyerId",
+                lawyerEmail: { $first: "$lawyerEmail" },
+                totalHires: { $sum: 1 },
+              },
+            },
+            {
+              $lookup: {
+                from: "lawyerProfiles",
+                let: { lawyerIdStr: "$_id", emailStr: "$lawyerEmail" },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $or: [
+                          { $eq: ["$lawyerId", "$$lawyerIdStr"] },
+                          { $eq: ["$lawyerEmail", "$$emailStr"] },
+                          { $eq: ["$_id", { $toObjectId: "$$lawyerIdStr" }] },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                as: "allProfiles",
+              },
+            },
+            { $unwind: "$allProfiles" },
+            {
+              $lookup: {
+                from: "reviews",
+                let: { profileIdStr: { $toString: "$allProfiles._id" } },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: { $eq: ["$lawyerId", "$$profileIdStr"] },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      avgRating: { $avg: "$rating" },
+                    },
+                  },
+                ],
+                as: "profileReviewStats",
+              },
+            },
+            {
+              $addFields: {
+                profileRating: {
+                  $ifNull: [
+                    { $arrayElemAt: ["$profileReviewStats.avgRating", 0] },
+                    0.0,
+                  ],
+                },
+              },
+            },
+
+            {
+              $sort: {
+                profileRating: -1,
+              },
+            },
+            {
+              $group: {
+                _id: "$lawyerEmail", 
+                totalHires: { $first: "$totalHires" },
+                bestProfile: { $first: "$allProfiles" }, 
+                bestProfileRating: { $first: "$profileRating" },
+              },
+            },
+
+            {
+              $sort: {
+                totalHires: -1,
+                bestProfileRating: -1,
+              },
+            },
+            { $limit: 3 },
+            {
+              $project: {
+                _id: "$bestProfile._id",
+                professionalName: "$bestProfile.professionalName",
+                specialization: "$bestProfile.specialization",
+                image: "$bestProfile.image",
+                totalHires: "$totalHires",
+              },
+            },
+          ])
+          .toArray();
+
+        res.send({ featuredLawyers, topExperts });
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error: error.message });
       }
     });
 
